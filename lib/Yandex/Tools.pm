@@ -7,12 +7,13 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
 
 require Exporter;
 
-$VERSION = '0.01';
+$VERSION = '0.02';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw (
   can_log
   do_log
   get_log_filename
+  get_log_options
   set_log_filename
   set_log_options
 
@@ -34,6 +35,7 @@ $VERSION = '0.01';
 
   get_callstack
 
+  daemonize
   run_forked
   
   send_mail
@@ -52,6 +54,7 @@ use Socket; # socketpair
 use File::Basename; # basename
 use File::Path; # mkpath
 use File::Copy;
+use Carp;
 
 my $have_mime_lite;
 eval {
@@ -72,6 +75,7 @@ our $debug;
 our $debug2;
 our $cmd;
 our $cmd_opts;
+our $new_cmd_opts;
 our $command = "";
 
 our $HOOKS = {};
@@ -998,6 +1002,13 @@ sub set_log_options {
   }
 }
 
+sub get_log_options {
+  if ($Yandex::Tools::LOG) {
+    return Storable::dclone($Yandex::Tools::LOG);
+  }
+  return undef;
+}
+
 sub set_log_filename {
   my ($filename, $opts) = @_;
 
@@ -1091,9 +1102,15 @@ sub do_log {
       $log_filename = $Yandex::Tools::LOG;
     }
 
+    if (!can_write($log_filename)) {
+      print STDERR "$log_filename is not writeable: $message_formatted\n";
+      return;
+    }
+
     $log_dirname = dirname($log_filename);
     if (! -d $log_dirname) {
-      File::Path::mkpath($log_dirname) || return Yandex::Tools::warn("[$log_filename] does not exist and unable to create [$log_dirname]");
+      File::Path::mkpath($log_dirname) ||
+        return Yandex::Tools::warn("[$log_filename] does not exist and unable to create [$log_dirname]");
     }
 
     if (ref($Yandex::Tools::LOG) && $Yandex::Tools::LOG->{'rotate_size'}) {
@@ -1300,6 +1317,8 @@ sub get_callstack {
 sub read_cmdline {
   my $i = 0;
 
+  $new_cmd_opts = {};
+
   my $v;
   my $first_parameter;
   while ($ARGV[$i]) {
@@ -1318,6 +1337,11 @@ sub read_cmdline {
         $cmd_opts->{$v} = "";
         $first_parameter = 1;
       }
+
+      $new_cmd_opts->{$v} = {
+        'defined' => 1,
+        'value' => '',
+        };
     }
     else {
       if ($v) {
@@ -1327,13 +1351,49 @@ sub read_cmdline {
         }
 
         $cmd_opts->{$v} .= ($cmd_opts->{$v} ? " " : "") . $ARGV[$i];
+
+        $new_cmd_opts->{$v}->{'value'} .=
+          ($new_cmd_opts->{$v}->{'value'} ? " " : "") . $ARGV[$i];
       }
       else {
         $cmd_opts->{$ARGV[$i]} = 1;
+
+        $new_cmd_opts->{$v} = {
+          'defined' => 1,
+          'value' => '',
+          };
       }
     }
     $i++;
   }
+}
+
+sub defined_cmdline_param {
+  my ($pname) = @_;
+
+  if (!ref($new_cmd_opts)) {
+    croak("Programmer error: get_cmdline_param called without read_cmdline");
+  }
+
+  return defined($new_cmd_opts->{$pname});
+}
+
+sub get_cmdline_param {
+  my ($pname) = @_;
+
+  if (!ref($new_cmd_opts)) {
+    croak("Programmer error: get_cmdline_param called without read_cmdline");
+  }
+
+  if ($new_cmd_opts->{$pname}) {
+    return $new_cmd_opts->{$pname}->{'value'};
+  }
+  
+  return undef;
+}
+
+sub num_cmdline_param {
+  return scalar(keys %{$new_cmd_opts});
 }
 
 sub canonize_delimiters {
@@ -1602,6 +1662,55 @@ sub matches_with_one_of_regexps {
   }
 
   return 0;
+}
+
+sub daemonize {
+  chdir('/') 
+    or CORE::die "Can not chdir to '/': $!\n";
+
+  open(STDIN, '/dev/null') 
+    or CORE::die "Can not read /dev/null: $!\n";
+
+  open(STDOUT, '/dev/null')
+    or CORE::die "Can not write to /dev/null: $!\n";
+ 
+  defined(my $pid = fork)
+    or CORE::die "Can not fork: $!\n";
+
+  exit if $pid;
+
+  POSIX::setsid()
+    or CORE::die("Error running setsid: " . $!);
+
+  open(STDERR, "/dev/null")
+    or CORE::die("unable to bind stderr to /dev/null: $!");
+}
+
+# fork && exec, replace myself with new myself,
+# possibly reading in my new version
+sub exec {
+  my ($cmd) = @_;
+
+  if (my $pid = fork) {
+    if (!$pid) {
+      Yandex::Tools::die("unable to fork: " . $!);
+    }
+
+    # parent
+    exit 0;
+  }
+  else {
+    POSIX::setsid() || Yandex::Tools::die("Error running setsid: " . $!);
+
+    # let parent exit and clean up from /proc (or whatever)
+    sleep 1;
+
+    POSIX::setsid() || Yandex::Tools::do_log("Error running setsid: " . $!, {'stderr' => 1}) && CORE::die();
+    
+    # next life
+    exec($cmd) || Yandex::Tools::do_log("[$$] unable to exec $cmd", {'stderr' => 1}) && CORE::die();
+  }
+  exit(255);
 }
 
 

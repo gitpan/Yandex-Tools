@@ -21,6 +21,7 @@ sub cmndline { my ($self) = @_; return $self->{'cmd'}; }
 
 package Yandex::Tools::ProcessList;
 
+my $runtime = {};
 my $config = {};
 
 sub set_options {
@@ -192,10 +193,10 @@ sub get_process_by_id {
     $processes = $opts->{'processes'};
   }
   else {
-    if (!$snaked::Daemon::runtime->{'startup_processes'}) {
-      $snaked::Daemon::runtime->{'startup_processes'} = get_process_table();
+    if (!$runtime->{'startup_processes'}) {
+      $runtime->{'startup_processes'} = get_process_table();
     }
-    $processes = $snaked::Daemon::runtime->{'startup_processes'};
+    $processes = $runtime->{'startup_processes'};
   }
 
   foreach my $p (@$processes) {
@@ -275,10 +276,10 @@ sub get_other_daemon_process {
   $opts = {} unless $opts;
 
   my $processes;
-  if (!$snaked::Daemon::runtime->{'startup_processes'} || $opts->{'refresh_startup_processes'}) {
-    $snaked::Daemon::runtime->{'startup_processes'} = get_process_table();
+  if (!$runtime->{'startup_processes'} || $opts->{'refresh_startup_processes'}) {
+    $runtime->{'startup_processes'} = get_process_table();
   }
-  $processes = $snaked::Daemon::runtime->{'startup_processes'};
+  $processes = $runtime->{'startup_processes'};
 
   # this doesn't mean "always find my process",
   # name of the sub is not consistent!!!
@@ -372,6 +373,21 @@ sub get_other_daemon_process {
   }
 
   return undef;
+}
+
+sub get_my_path_commandline {
+  my ($opts) = @_;
+  my $my_path;
+  my $my_command_line;
+
+  my $me = Yandex::Tools::ProcessList::get_process_by_id($$, $opts);
+  Yandex::Tools::die("[$$]: unable to find myself in process list") unless $me;
+  $my_path = $FindBin::Bin;
+  Yandex::Tools::die("[$$]: unable to find my path") unless $my_path;
+  $my_command_line = $me->cmndline;
+  Yandex::Tools::die("[$$] unable to determine my command line") unless $my_command_line;
+
+  return ($my_path, $my_command_line);
 }
 
 

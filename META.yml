@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Yandex-Tools
-version:            0.02
+version:            0.03
 abstract:           useful functions for Yandex daemons and programs.
 author:
     - Petya Kohts <kohts@yandex-team.ru>

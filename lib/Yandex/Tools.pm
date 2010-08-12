@@ -7,7 +7,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
 
 require Exporter;
 
-$VERSION = '0.02';
+$VERSION = '0.03';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw (
   can_log
@@ -306,6 +306,12 @@ sub read_dir {
   }
 
   return $entries;
+}
+
+sub disable_all_signals {
+  foreach my $s (keys %SIG) {
+    $SIG{$s} = 'IGNORE';
+  }
 }
 
 # incompatible with POSIX::SigAction

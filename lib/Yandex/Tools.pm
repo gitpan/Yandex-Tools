@@ -7,7 +7,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
 
 require Exporter;
 
-$VERSION = '0.03';
+$VERSION = '0.04';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw (
   can_log
@@ -1658,10 +1658,12 @@ sub send_mail {
 #
 sub matches_with_one_of_regexps {
   my ($str, $rxs) = @_;
-  
-  $rxs = [] unless $rxs;
+
+  $rxs = [] if !$rxs || ref($rxs) ne 'ARRAY';
 
   foreach my $rx (@{$rxs}) {
+    next if !defined($rx);
+
     if ($str =~ /$rx/) {
       return 1;
     }

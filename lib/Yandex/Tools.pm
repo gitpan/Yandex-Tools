@@ -7,7 +7,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
 
 require Exporter;
 
-$VERSION = '0.04';
+$VERSION = '0.06';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw (
   can_log
@@ -647,6 +647,8 @@ sub run_forked {
 
     my $got_sig_child = 0;
     my $got_sig_quit = 0;
+    my $orig_sig_child = $SIG{'CHLD'};
+
     $SIG{'CHLD'} = sub { $got_sig_child = time(); };
     
     if ($opts->{'terminate_on_signal'}) {
@@ -833,6 +835,13 @@ sub run_forked {
     }
     $o->{'err_msg'} = $err_msg;
 
+    if ($orig_sig_child) {
+      $SIG{'CHLD'} = $orig_sig_child;
+    }
+    else {
+      delete($SIG{'CHLD'});
+    }
+
     return $o;
   }
   else {
@@ -845,6 +854,10 @@ sub run_forked {
     # with those)
 
     POSIX::setsid() || Yandex::Tools::die("Error running setsid: " . $!);
+
+    if ($opts->{'child_BEGIN'} && ref($opts->{'child_BEGIN'}) eq 'CODE') {
+      $opts->{'child_BEGIN'}->();
+    }
 
     close($child_stdout_socket);
     close($child_stderr_socket);
@@ -879,6 +892,10 @@ sub run_forked {
     close($parent_stdout_socket);
     close($parent_stderr_socket);
     close($parent_info_socket);
+
+    if ($opts->{'child_END'} && ref($opts->{'child_END'}) eq 'CODE') {
+      $opts->{'child_END'}->();
+    }
 
     exit $child_exit_code;
   }
@@ -1364,7 +1381,7 @@ sub read_cmdline {
       else {
         $cmd_opts->{$ARGV[$i]} = 1;
 
-        $new_cmd_opts->{$v} = {
+        $new_cmd_opts->{$ARGV[$i]} = {
           'defined' => 1,
           'value' => '',
           };

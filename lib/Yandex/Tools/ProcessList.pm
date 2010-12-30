@@ -73,16 +73,13 @@ sub code_may_fail {
 sub get_process_table {
   my $ptable;
 
-  # Proc::ProcessTable has some leaks on linux
-  # which leads to process dying
-  if ($^O eq 'linux') {
-    $ptable = [];
-    
+  my @all_entries;
+  if (-d "/proc") {
     my $i = 0;
 
     my $dummy;
     my $open_res;
-    while (!($open_res = opendir($dummy, "/proc")) && $i < 3) {
+    while (!($open_res = opendir($dummy, "/proc")) && $i < 2) {
       sleep 1;
       $i++;
     }
@@ -90,15 +87,23 @@ sub get_process_table {
       Yandex::Tools::die("unable to read /proc");
     }
 
-    my @all_entries;
     $i = 0;
-    while (scalar(@all_entries) < 3 && $i < 3) {
+    while (scalar(@all_entries) < 3 && $i < 2) {
       @all_entries = readdir($dummy);
       sleep 1 if $i > 0;
       $i++;
     }
     close($dummy);
+  }
 
+  # Proc::ProcessTable has some leaks on linux
+  # which leads to process dying
+  #
+  # use procfs if available
+  #
+  if ($^O eq 'linux' || scalar(@all_entries) > 3) {
+    $ptable = [];
+    
     # . + .. eq 2
     if (scalar(@all_entries) < 3) {
       Yandex::Tools::die("/proc is not mounted");
@@ -124,27 +129,51 @@ sub get_process_table {
       my $cmd = $read_may_fail->("$pid_dir/cmdline");
       $cmd =~ s/\0/ /goi if $cmd;
 
-      my $stat = $read_may_fail->("$pid_dir/stat");
-      next unless $stat;
+      my $ppid;
+      my $pgid;
 
-      my @stat_arr = split(" ", $stat);
-      next if ! scalar(@stat_arr) > 5;
+      if (-e "$pid_dir/stat") { # linux path
+        my $stat = $read_may_fail->("$pid_dir/stat");
+        next unless $stat;
 
-      if (!$cmd) {
-        $cmd = $stat_arr[1];
+        my @stat_arr = split(" ", $stat);
+        next if ! scalar(@stat_arr) > 5;
+
+        if (!$cmd) {
+          $cmd = $stat_arr[1];
         
-        if ($cmd) {
-          $cmd =~ s/[\(\)]//goi;
-          $cmd = "[" . $cmd . "]";
+          if ($cmd) {
+            $cmd =~ s/[\(\)]//goi;
+            $cmd = "[" . $cmd . "]";
+          }
         }
+
+        $ppid = $stat_arr[3];
+        $pgid = $stat_arr[4];
+      }
+      elsif (-e "$pid_dir/status") { # bsd path
+        my $stat = $read_may_fail->("$pid_dir/status");
+        next unless $stat;
+
+        my @stat_arr = split(" ", $stat);
+        next if ! scalar(@stat_arr) > 5;
+
+        if (!$cmd) {
+          $cmd = $stat_arr[0];
+        
+          if ($cmd) {
+            $cmd =~ s/[\(\)]//goi;
+            $cmd = "[" . $cmd . "]";
+          }
+        }
+
+        $ppid = $stat_arr[2];
+        $pgid = $stat_arr[3];
       }
 
-      my $ppid = $stat_arr[3];
-      my $pgid = $stat_arr[4];
-
       next if ! $cmd;
-      next if ! $ppid =~ /^\d+$/o;
-      next if ! $pgid =~ /^\d+$/o;
+      next if $ppid !~ /^[0-9]+$/o;
+      next if $pgid !~ /^[0-9]+$/o;
 
       my $p = {
         'pid' => $e,

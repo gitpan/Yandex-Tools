@@ -8,9 +8,6 @@ use warnings;
 use Yandex::Tools;
 
 package Yandex::Tools::ProcessList;
-if ($^O ne 'linux') {
-  require Proc::ProcessTable;
-}
 
 package psProcess;
 sub pid { my ($self) = @_; return $self->{'pid'}; }
@@ -94,6 +91,12 @@ sub get_process_table {
       $i++;
     }
     close($dummy);
+  }
+  else {
+    # try to use Proc::ProcessTable on BSD when /proc is not available
+    if ($^O ne 'linux') {
+      require Proc::ProcessTable;
+    }
   }
 
   # Proc::ProcessTable has some leaks on linux

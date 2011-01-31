@@ -7,7 +7,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
 
 require Exporter;
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw (
   can_log
@@ -331,7 +331,7 @@ sub install_layered_signal {
   my $sig_handler = sub {
     my ($called_sig_name, @sig_param) = @_;
     
-    # $s is a closure refering to real signal name
+    # $s is a closure referring to real signal name
     # for which this handler is being installed.
     # it is used to distinguish between
     # real signal handlers and aliased signal handlers
@@ -345,7 +345,7 @@ sub install_layered_signal {
     # ABRT and IOT)
     #
     # initial signal handler for aliased signal
-    # calles some other signal handler which
+    # calls some other signal handler which
     # should not execute the same handler_code again
     if ($called_sig_name eq $signal_name) {
       $handler_code->($signal_name);
@@ -494,7 +494,6 @@ sub open3_run {
       #
       kill(-9, $$);
 
-      # shouldn't reach here
       exit 1;
     }
 
@@ -578,6 +577,9 @@ sub run_forked {
   $opts = {} unless $opts;
   $opts->{'timeout'} = 0 unless $opts->{'timeout'};
   $opts->{'terminate_wait_time'} = 2 unless defined($opts->{'terminate_wait_time'});
+
+  # turned on by default
+  $opts->{'clean_up_children'} = 1 unless defined($opts->{'clean_up_children'});
 
   # sockets to pass child stdout to parent
   my $child_stdout_socket;
@@ -774,7 +776,7 @@ sub run_forked {
     #
     # defined $child_pid_pid means child's child
     # has not died but nobody is waiting for it,
-    # killing it brutaly.
+    # killing it brutally.
     #
     if ($child_child_pid) {
       kill_gently($child_child_pid);

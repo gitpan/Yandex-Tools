@@ -7,7 +7,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
 
 require Exporter;
 
-$VERSION = '0.07';
+$VERSION = '0.09';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw (
   can_log
@@ -49,7 +49,7 @@ use IPC::Open3;
 use IO::Select;
 use IO::Handle; # autoflush
 use FileHandle;
-use Time::HiRes qw/usleep/;
+use Time::HiRes qw/usleep clock_gettime CLOCK_MONOTONIC/;
 use Socket; # socketpair
 use File::Basename; # basename
 use File::Path; # mkpath
@@ -99,10 +99,38 @@ sub write_file_option {
   my ($filename, $value, $opts) = @_;
 
   $opts = {} unless $opts;
-  my $fh = Yandex::Tools::safe_open($filename, "overwrite", {'timeout' => 2});
+  my $fh = Yandex::Tools::safe_open($filename, "overwrite", {'timeout' => $opts->{'timeout'} || 2});
   return 0 unless $fh;
+
+  $value = "" unless defined($value);
+
   print $fh $value . "\n";
   Yandex::Tools::safe_close($fh);
+}
+
+sub write_file_option_safe {
+  my ($filename, $value, $opts) = @_;
+
+  $opts = {} unless $opts;
+  
+  my $dirname = $filename;
+  $dirname =~ s/\/[^\/]*$//goi;
+
+  my $filename_tmp = $filename;
+  $filename_tmp =~ s/.+\///goi;
+
+  $filename_tmp = $dirname . "/.safe." . $filename_tmp;
+
+  my $fh = Yandex::Tools::safe_open($filename_tmp, "overwrite", {'timeout' => $opts->{'timeout'} || 2});
+  return 0 unless $fh;
+
+  $value = "" unless defined($value);
+
+  print $fh $value . "\n";
+  Yandex::Tools::safe_close($fh);
+
+  my $res = rename ($filename_tmp, $filename);
+  return $res;
 }
 
 sub read_file_scalar {
@@ -380,9 +408,9 @@ sub kill_gently {
   }
   
   my $child_finished = 0;
-  my $wait_start_time = time();
+  my $wait_start_time = clock_gettime(CLOCK_MONOTONIC);
 
-  while (!$child_finished && $wait_start_time + $opts->{'wait_time'} > time()) {
+  while (!$child_finished && $wait_start_time + $opts->{'wait_time'} > clock_gettime(CLOCK_MONOTONIC)) {
     my $waitpid = waitpid($pid, WNOHANG);
     if ($waitpid eq -1) {
       $child_finished = 1;
@@ -476,7 +504,7 @@ sub open3_run {
   my $child_finished = 0;
 
   my $got_sig_child = 0;
-  $SIG{'CHLD'} = sub { $got_sig_child = time(); };
+  $SIG{'CHLD'} = sub { $got_sig_child = clock_gettime(CLOCK_MONOTONIC); };
 
   while(!$child_finished && ($child_out->opened || $child_err->opened)) {
 
@@ -498,7 +526,7 @@ sub open3_run {
     }
 
     if ($got_sig_child) {
-      if (time() - $got_sig_child > 1) {
+      if (clock_gettime(CLOCK_MONOTONIC) - $got_sig_child > 1) {
         # select->can_read doesn't return 0 after SIG_CHLD
         #
         # "On POSIX-compliant platforms, SIGCHLD is the signal
@@ -607,7 +635,7 @@ sub run_forked {
   $child_info_socket->autoflush(1);
   $parent_info_socket->autoflush(1);
 
-  my $start_time = time();
+  my $start_time = clock_gettime(CLOCK_MONOTONIC);
 
   my $pid;
   if ($pid = fork) {
@@ -651,16 +679,16 @@ sub run_forked {
     my $got_sig_quit = 0;
     my $orig_sig_child = $SIG{'CHLD'};
 
-    $SIG{'CHLD'} = sub { $got_sig_child = time(); };
+    $SIG{'CHLD'} = sub { $got_sig_child = clock_gettime(CLOCK_MONOTONIC); };
     
     if ($opts->{'terminate_on_signal'}) {
-      install_layered_signal($opts->{'terminate_on_signal'}, sub { $got_sig_quit = time(); });
+      install_layered_signal($opts->{'terminate_on_signal'}, sub { $got_sig_quit = clock_gettime(CLOCK_MONOTONIC); });
     }
 
     my $child_child_pid;
 
     while (!$child_finished) {
-      my $now = time();
+      my $now = clock_gettime(CLOCK_MONOTONIC);
 
       if ($opts->{'terminate_on_parent_sudden_death'}) {
         $opts->{'runtime'}->{'last_parent_check'} = 0
@@ -826,7 +854,7 @@ sub run_forked {
     if ($o->{'parent_died'}) {
       $err_msg .= "parent died\n";
     }
-    if ($o->{'stdout'}) {
+    if ($o->{'stdout'} && !$opts->{'non_empty_stdout_ok'}) {
       $err_msg .= "stdout:\n" . $o->{'stdout'} . "\n";
     }
     if ($o->{'stderr'}) {
@@ -1658,6 +1686,11 @@ sub send_mail {
       }
     }
 
+    if ($opts->{'from'}) {
+      # for Heirloom mailx 12.4 used on forward*.mail.yandex.net
+      $ENV{'from'} = $opts->{'from'};
+    }
+
     my $r = Yandex::Tools::run_forked("mail -s \"$subj\" $to_scalar", {'child_stdin' => $opts->{'body'}});
     if ($r->{'exit_code'} ne 0) {
       Yandex::Tools::do_log("Unable to send mail through system mailer, exit_code [$r->{'exit_code'}], stderr [$r->{'stderr'}], " .
@@ -1739,6 +1772,71 @@ sub exec {
   }
   exit(255);
 }
+
+
+sub lock {
+  my ($file) = @_;
+
+  Yandex::Tools::die("lock: lock name expected") unless $file;
+
+  $Yandex::Tools::locks = {} unless $Yandex::Tools::locks;
+
+  $Yandex::Tools::locks->{$file} = Yandex::Tools::safe_open($file, "overwrite", {'silent' => 1, 'timeout' => 5});
+  return undef unless $Yandex::Tools::locks->{$file};
+
+  my $lock_fh = $Yandex::Tools::locks->{$file};
+  autoflush $lock_fh;
+  print $lock_fh $$;
+
+  Yandex::Tools::add_hook({
+    'type' => 'before_die',
+     'func' => sub {Yandex::Tools::unlock($file);},
+     'args' => [],
+     });
+
+  return 1;
+}
+
+sub unlock {
+  my ($file) = @_;
+
+  Yandex::Tools::die("unlock: lock name expected") unless $file;
+
+  if ($Yandex::Tools::locks->{$file}) {
+    Yandex::Tools::safe_close($Yandex::Tools::locks->{$file});
+    unlink($file);
+    $Yandex::Tools::locks->{$file} = undef;
+    return 1;
+  }
+
+  return undef;
+}
+
+sub is_locked {
+  my ($file) = @_;
+
+  Yandex::Tools::die("is_locked: lock name expected") unless $file;
+
+  if (! -e $file) {
+    return 0;
+  }
+
+  $Yandex::Tools::locks->{$file} = Yandex::Tools::safe_open($file, "",
+    {
+      'silent' => 1,
+      'timeout' => 0,
+    });
+
+  if ($Yandex::Tools::locks->{$file}) {
+    Yandex::Tools::safe_close($Yandex::Tools::locks->{$file});
+    $Yandex::Tools::locks->{$file} = undef;
+    return 0;
+  }
+  else {
+    return Yandex::Tools::read_file_scalar($file);
+  }
+}
+
 
 
 1;

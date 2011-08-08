@@ -7,7 +7,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK $AUTOLOAD);
 
 require Exporter;
 
-$VERSION = '0.09';
+$VERSION = '0.10';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw (
   can_log
@@ -55,6 +55,7 @@ use File::Basename; # basename
 use File::Path; # mkpath
 use File::Copy;
 use Carp;
+use Storable;
 
 my $have_mime_lite;
 eval {
@@ -1438,11 +1439,17 @@ sub get_cmdline_param {
     croak("Programmer error: get_cmdline_param called without read_cmdline");
   }
 
-  if ($new_cmd_opts->{$pname}) {
-    return $new_cmd_opts->{$pname}->{'value'};
+  if ($pname) {
+    if ($new_cmd_opts->{$pname}) {
+      return $new_cmd_opts->{$pname}->{'value'};
+    }
+    else {
+      return undef;
+    }
   }
-  
-  return undef;
+  else {
+    return $new_cmd_opts;
+  }
 }
 
 sub num_cmdline_param {

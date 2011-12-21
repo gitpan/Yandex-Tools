@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Yandex-Tools
-version:            0.13
+version:            0.14
 abstract:           useful functions for Yandex daemons and programs.
 author:
     - Petya Kohts <petya@kohts.ru>
@@ -11,11 +11,10 @@ configure_requires:
 build_requires:
     ExtUtils::MakeMaker:  0
 requires:
-    Cwd:             0
-    Schedule::Cron:  0
-    Storable:        0
-    Time::HiRes:     0
-    Time::Local:     0
+    Cwd:          0
+    Storable:     0
+    Time::HiRes:  0
+    Time::Local:  0
 no_index:
     directory:
         - t

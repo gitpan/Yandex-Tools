@@ -1,25 +1,26 @@
---- #YAML:1.0
-name:               Yandex-Tools
-version:            0.15
-abstract:           useful functions for Yandex daemons and programs.
+---
+abstract: 'useful functions for Yandex daemons and programs.'
 author:
-    - Petya Kohts <petya@kohts.ru>
-license:            unknown
-distribution_type:  module
-configure_requires:
-    ExtUtils::MakeMaker:  0
+  - 'Petya Kohts <petya@kohts.com>'
 build_requires:
-    ExtUtils::MakeMaker:  0
-requires:
-    Cwd:          0
-    Storable:     0
-    Time::HiRes:  0
-    Time::Local:  0
-no_index:
-    directory:
-        - t
-        - inc
-generated_by:       ExtUtils::MakeMaker version 6.55_02
+  ExtUtils::MakeMaker: 0
+configure_requires:
+  ExtUtils::MakeMaker: 0
+dynamic_config: 1
+generated_by: 'ExtUtils::MakeMaker version 6.68, CPAN::Meta::Converter version 2.112621'
+license: unknown
 meta-spec:
-    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
-    version:  1.4
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Yandex-Tools
+no_index:
+  directory:
+    - t
+    - inc
+requires:
+  Cwd: 0
+  IPC::Cmd: 0.84
+  Storable: 0
+  Time::HiRes: 0
+  Time::Local: 0
+version: 0.16
